@@ -1,3 +1,3 @@
 # Basic vulkan template
 
-This is mean for personal use. Very bad setup
+This is meant for personal use. Very bad setup
