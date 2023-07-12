@@ -5,7 +5,7 @@ SOURCES = src/main.cpp
 .PHONY: clean uninstall
 
 isometric: src/main.cpp install
-	g++ ${CFLAGS} -o isometric ${SOURCES} ${LDFLAGS}
+	g++ ${CFLAGS} -o isometric ${SOURCES} ${LDFLAGS} -O0 -g
 
 compile_commands.json:
 	bear -- make
