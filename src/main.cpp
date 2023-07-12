@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <vector>
@@ -47,7 +46,10 @@ private:
 
   void init_vulkan() {
     create_instance();
-    pick_physical_device();
+    VkPhysicalDevice physical_device = pick_physical_device();
+    create_logical_device(physical_device);
+    QueueFamilyIndices indices = find_queue_families(physical_device);
+    vkGetDeviceQueue(device, indices.graphics_family.value(), 0, &graphics_queue);
   }
 
   void create_instance() {
@@ -84,7 +86,7 @@ private:
     }
   }
 
-  void pick_physical_device() {
+  VkPhysicalDevice pick_physical_device() {
     VkPhysicalDevice physical_device = VK_NULL_HANDLE;
     uint32_t device_count = 0;
     vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
@@ -101,6 +103,33 @@ private:
     }
     if (physical_device == VK_NULL_HANDLE) {
       throw new std::runtime_error("failed to find a suitable GPU");
+    }
+    return physical_device;
+  }
+
+  void create_logical_device(VkPhysicalDevice physical_device) {
+    QueueFamilyIndices indices = find_queue_families(physical_device);
+    VkDeviceQueueCreateInfo queue_create_info{};
+    queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queue_create_info.queueFamilyIndex = indices.graphics_family.value();
+    queue_create_info.queueCount = 1;
+    float queue_proiority = 1.0f;
+    queue_create_info.pQueuePriorities = &queue_proiority;
+    VkPhysicalDeviceFeatures device_features{};
+    VkDeviceCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create_info.pQueueCreateInfos = &queue_create_info;
+    create_info.queueCreateInfoCount = 1;
+    create_info.pEnabledFeatures = &device_features;
+    create_info.enabledExtensionCount = 0;
+    if (enable_validation_layers) {
+      create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
+      create_info.ppEnabledLayerNames = validation_layers.data();
+    } else {
+      create_info.enabledLayerCount = 0;
+    }
+    if (vkCreateDevice(physical_device, &create_info, nullptr, &device)) {
+      throw std::runtime_error("failed to create logical device");
     }
   }
 
@@ -156,6 +185,7 @@ private:
   }
 
   void cleanup() {
+    vkDestroyDevice(device, nullptr);
     vkDestroyInstance(instance, nullptr);
     glfwDestroyWindow(window);
     glfwTerminate();
@@ -163,6 +193,8 @@ private:
 
   GLFWwindow *window;
   VkInstance instance;
+  VkDevice device;
+  VkQueue graphics_queue;
 };
 
 int main() {
