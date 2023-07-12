@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
@@ -21,6 +22,12 @@ const bool enable_validation_layers = false;
 const bool enable_validation_layers = true;
 #endif
 
+struct QueueFamilyIndices {
+  std::optional<uint32_t> graphics_family;
+
+  bool is_complete() { return graphics_family.has_value(); }
+};
+
 class HelloTriangleApplication {
 public:
   void run() {
@@ -38,11 +45,15 @@ private:
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
   }
 
-  void init_vulkan() { create_instance(); }
+  void init_vulkan() {
+    create_instance();
+    pick_physical_device();
+  }
 
   void create_instance() {
     if (!check_validation_layer_support()) {
-      throw std::runtime_error("validation layers requested, but not available!");
+      throw std::runtime_error(
+          "validation layers requested, but not available!");
     }
     VkApplicationInfo app_info{};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -62,7 +73,8 @@ private:
     create_info.enabledLayerCount = 0;
     if (enable_validation_layers) {
       std::cout << "validation layers enabled" << std::endl;
-      create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
+      create_info.enabledLayerCount =
+          static_cast<uint32_t>(validation_layers.size());
       create_info.ppEnabledLayerNames = validation_layers.data();
     } else {
       create_info.enabledLayerCount = 0;
@@ -72,14 +84,59 @@ private:
     }
   }
 
+  void pick_physical_device() {
+    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    uint32_t device_count = 0;
+    vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
+    if (device_count == 0) {
+      throw std::runtime_error("failed to find GPU with Vulkan support!");
+    }
+    std::vector<VkPhysicalDevice> devices(device_count);
+    vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
+    for (const auto &device : devices) {
+      if (is_device_suitable(device)) {
+        physical_device = device;
+        break;
+      }
+    }
+    if (physical_device == VK_NULL_HANDLE) {
+      throw new std::runtime_error("failed to find a suitable GPU");
+    }
+  }
+
+  bool is_device_suitable(VkPhysicalDevice device) {
+    // VkPhysicalDeviceProperties device_properties;
+    // VkPhysicalDeviceFeatures device_features;
+    // vkGetPhysicalDeviceProperties(device, &device_properties);
+    // vkGetPhysicalDeviceFeatures(device, &device_features);
+    QueueFamilyIndices indices = find_queue_families(device);
+    return indices.is_complete();
+  }
+
+  QueueFamilyIndices find_queue_families(VkPhysicalDevice device) {
+    QueueFamilyIndices indices;
+    uint32_t count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
+    int i = 0;
+    for (const auto &queue_family : families) {
+      if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+        indices.graphics_family = i;
+      }
+      i++;
+    }
+    return indices;
+  }
+
   bool check_validation_layer_support() {
     uint32_t layer_count;
     vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
     std::vector<VkLayerProperties> available_layers(layer_count);
     vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
-    for (const char* layer_name : validation_layers) {
+    for (const char *layer_name : validation_layers) {
       bool layer_found = false;
-      for (const auto& layer_properties: available_layers) {
+      for (const auto &layer_properties : available_layers) {
         if (strcmp(layer_name, layer_properties.layerName)) {
           layer_found = true;
           break;
