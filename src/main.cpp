@@ -66,6 +66,7 @@ private:
     pick_physical_device();
     create_logical_device();
     create_swap_chain();
+    create_image_views();
   }
 
   void create_instance() {
@@ -215,6 +216,28 @@ private:
     vkGetSwapchainImagesKHR(device, swap_chain, &image_count, swap_chain_images.data());
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
+  }
+
+  void create_image_views() {
+    swap_chain_image_views.resize(swap_chain_images.size());
+    for (size_t i = 0; i < swap_chain_images.size(); i++) {
+      VkImageViewCreateInfo create_info{};
+      create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+      create_info.image = swap_chain_images[i];
+      create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+      create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+      create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      create_info.subresourceRange.baseMipLevel = 0;
+      create_info.subresourceRange.levelCount = 1;
+      create_info.subresourceRange.baseArrayLayer = 0;
+      create_info.subresourceRange.layerCount = 1;
+      if (vkCreateImageView(device, &create_info, nullptr, &swap_chain_image_views[i]) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create image views!");
+      }
+    }
   }
 
   bool is_device_suitable(VkPhysicalDevice device) {
@@ -368,6 +391,9 @@ private:
   }
 
   void cleanup() {
+    for (auto image_view : swap_chain_image_views) {
+      vkDestroyImageView(device, image_view, nullptr);
+    }
     vkDestroySwapchainKHR(device, swap_chain, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
@@ -382,6 +408,7 @@ private:
   VkSurfaceKHR surface;
   VkSwapchainKHR swap_chain;
   std::vector<VkImage> swap_chain_images;
+  std::vector<VkImageView> swap_chain_image_views;
   VkFormat swap_chain_image_format;
   VkExtent2D swap_chain_extent;
   VkDevice device;
