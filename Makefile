@@ -4,8 +4,16 @@ SOURCES = src/main.cpp
 
 .PHONY: clean uninstall
 
-isometric: src/main.cpp install
+isometric: src/main.cpp shader install
 	g++ ${CFLAGS} -o isometric ${SOURCES} ${LDFLAGS} -O0 -g
+
+shader: vert.spv frag.spv
+
+vert.spv: shaders/shader.vert install
+	glslc shaders/shader.vert -o vert.spv
+
+frag.spv: shaders/shader.frag install
+	glslc shaders/shader.frag -o frag.spv
 
 compile_commands.json:
 	bear -- make
@@ -19,4 +27,4 @@ uninstall:
 	rm -f install
 
 clean:
-	rm -f isometric
+	rm -f isometric vert.spv frag.spv

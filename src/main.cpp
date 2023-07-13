@@ -9,6 +9,8 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <util/shader_util.hpp>
+
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -67,6 +69,7 @@ private:
     create_logical_device();
     create_swap_chain();
     create_image_views();
+    create_graphics_pipeline();
   }
 
   void create_instance() {
@@ -238,6 +241,38 @@ private:
         throw std::runtime_error("failed to create image views!");
       }
     }
+  }
+
+  void create_graphics_pipeline() {
+    auto vert_shader_code = read_file("vert.spv");
+    auto frag_shader_code = read_file("frag.spv");
+    VkShaderModule vert_shader = create_shader_module(vert_shader_code);
+    VkShaderModule frag_shader = create_shader_module(frag_shader_code);
+    VkPipelineShaderStageCreateInfo vert_create_info{};
+    vert_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vert_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vert_create_info.module = vert_shader;
+    vert_create_info.pName = "main";
+    VkPipelineShaderStageCreateInfo frag_create_info{};
+    frag_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    frag_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    frag_create_info.module = frag_shader;
+    frag_create_info.pName = "main";
+    VkPipelineShaderStageCreateInfo shader_stages[] = {vert_create_info, frag_create_info};
+    vkDestroyShaderModule(device, vert_shader, nullptr);
+    vkDestroyShaderModule(device, frag_shader, nullptr);
+  }
+
+  VkShaderModule create_shader_module(const std::vector<char>& code) {
+    VkShaderModuleCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    create_info.codeSize = code.size();
+    create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+    VkShaderModule shader_module;
+    if (vkCreateShaderModule(device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
+      throw std::runtime_error("failed to create shader module");
+    }
+    return shader_module;
   }
 
   bool is_device_suitable(VkPhysicalDevice device) {
