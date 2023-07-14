@@ -652,6 +652,7 @@ private:
       glfwPollEvents();
       draw_frame();
     }
+    vkDeviceWaitIdle(device);
   }
 
   void draw_frame() {
