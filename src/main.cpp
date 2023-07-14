@@ -71,6 +71,7 @@ private:
     create_image_views();
     create_render_pass();
     create_graphics_pipeline();
+    create_framebuffers();
   }
 
   void create_instance() {
@@ -357,7 +358,8 @@ private:
     pipeline_info.subpass = 0;
     pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
     pipeline_info.basePipelineIndex = -1;
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &graphics_pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info,
+                                  nullptr, &graphics_pipeline) != VK_SUCCESS) {
       throw std::runtime_error("failed to create graphics pipeline");
     }
 
@@ -404,6 +406,27 @@ private:
     if (vkCreateRenderPass(device, &render_pass_info, nullptr, &render_pass) !=
         VK_SUCCESS) {
       throw std::runtime_error("failed to create render pass!");
+    }
+  }
+
+  void create_framebuffers() {
+    swap_chain_framebuffers.resize(swap_chain_image_views.size());
+    for (size_t i = 0; i < swap_chain_image_views.size(); i++) {
+      VkImageView attachments[] = {
+          swap_chain_image_views[i],
+      };
+      VkFramebufferCreateInfo framebuffer_info{};
+      framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+      framebuffer_info.renderPass = render_pass;
+      framebuffer_info.attachmentCount = 1;
+      framebuffer_info.pAttachments = attachments;
+      framebuffer_info.width = swap_chain_extent.width;
+      framebuffer_info.height = swap_chain_extent.height;
+      framebuffer_info.layers = 1;
+      if (vkCreateFramebuffer(device, &framebuffer_info, nullptr,
+                              &swap_chain_framebuffers[i]) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create framebuffer");
+      }
     }
   }
 
@@ -558,6 +581,9 @@ private:
   }
 
   void cleanup() {
+    for (auto framebuffer: swap_chain_framebuffers) {
+      vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
     vkDestroyPipeline(device, graphics_pipeline, nullptr);
     vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
     vkDestroyRenderPass(device, render_pass, nullptr);
@@ -588,6 +614,7 @@ private:
   VkRenderPass render_pass;
   VkPipelineLayout pipeline_layout;
   VkPipeline graphics_pipeline;
+  std::vector<VkFramebuffer> swap_chain_framebuffers;
 };
 
 int main() {
