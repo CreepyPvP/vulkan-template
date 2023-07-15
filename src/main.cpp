@@ -81,9 +81,12 @@ struct Vertex {
   }
 };
 
-const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-                                      {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                      {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+const std::vector<Vertex> vertices = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                      {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                      {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                      {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}};
+
+const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
 
 class HelloTriangleApplication {
 public:
@@ -123,6 +126,7 @@ private:
     create_framebuffers();
     create_command_pool();
     create_vertex_buffer();
+    create_index_buffer();
     create_command_buffers();
     create_sync_objects();
   }
@@ -192,8 +196,8 @@ private:
   void create_logical_device() {
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
     std::set<uint32_t> unique_queue_families = {
-        indices.graphics_family.value(),
-        indices.present_family.value(),
+        queue_indices.graphics_family.value(),
+        queue_indices.present_family.value(),
     };
     float queue_proiority = 1.0f;
     for (uint32_t queue_family : unique_queue_families) {
@@ -225,9 +229,10 @@ private:
     if (vkCreateDevice(physical_device, &create_info, nullptr, &device)) {
       throw std::runtime_error("failed to create logical device");
     }
-    vkGetDeviceQueue(device, indices.graphics_family.value(), 0,
+    vkGetDeviceQueue(device, queue_indices.graphics_family.value(), 0,
                      &graphics_queue);
-    vkGetDeviceQueue(device, indices.present_family.value(), 0, &present_queue);
+    vkGetDeviceQueue(device, queue_indices.present_family.value(), 0,
+                     &present_queue);
   }
 
   void create_swap_chain() {
@@ -252,9 +257,9 @@ private:
     create_info.imageExtent = extent;
     create_info.imageArrayLayers = 1;
     create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    uint32_t queue_family_indices[] = {indices.graphics_family.value(),
-                                       indices.present_family.value()};
-    if (indices.present_family != indices.graphics_family) {
+    uint32_t queue_family_indices[] = {queue_indices.graphics_family.value(),
+                                       queue_indices.present_family.value()};
+    if (queue_indices.present_family != queue_indices.graphics_family) {
       create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
       create_info.queueFamilyIndexCount = 2;
       create_info.pQueueFamilyIndices = queue_family_indices;
@@ -515,7 +520,7 @@ private:
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    pool_info.queueFamilyIndex = indices.graphics_family.value();
+    pool_info.queueFamilyIndex = queue_indices.graphics_family.value();
     if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) !=
         VK_SUCCESS) {
       throw std::runtime_error("failed to create command pool");
@@ -569,7 +574,29 @@ private:
     vkFreeMemory(device, staging_buffer_memory, nullptr);
   }
 
-  void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) {
+  void create_index_buffer() {
+    VkDeviceSize buffer_size = sizeof(indices[0]) * indices.size();
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_buffer_memory;
+    create_buffer(buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                  staging_buffer, staging_buffer_memory);
+    void *data;
+    vkMapMemory(device, staging_buffer_memory, 0, buffer_size, 0, &data);
+    memcpy(data, indices.data(), (size_t) buffer_size);
+    vkUnmapMemory(device, staging_buffer_memory);
+    create_buffer(
+        buffer_size,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, index_buffer, index_buffer_memory);
+    copy_buffer(staging_buffer, index_buffer, buffer_size);
+    vkDestroyBuffer(device, staging_buffer, nullptr);
+    vkFreeMemory(device, staging_buffer_memory, nullptr);
+  }
+
+  void copy_buffer(VkBuffer src_buffer, VkBuffer dst_buffer,
+                   VkDeviceSize size) {
     VkCommandBufferAllocateInfo alloc_info{};
     alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -668,7 +695,8 @@ private:
     VkBuffer vertex_buffers[] = {vertex_buffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(buffer, 0, 1, vertex_buffers, offsets);
-    vkCmdDraw(buffer, static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+    vkCmdBindIndexBuffer(buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(buffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(buffer);
     if (vkEndCommandBuffer(buffer) != VK_SUCCESS) {
       throw std::runtime_error("failed to record command buffer");
@@ -680,7 +708,7 @@ private:
     // VkPhysicalDeviceFeatures device_features;
     // vkGetPhysicalDeviceProperties(device, &device_properties);
     // vkGetPhysicalDeviceFeatures(device, &device_features);
-    indices = find_queue_families(device);
+    queue_indices = find_queue_families(device);
     bool extensions_support = check_device_extension_support(device);
     if (extensions_support) {
       SwapChainSupportDetails swap_chain_support =
@@ -690,7 +718,7 @@ private:
         return false;
       }
     }
-    return indices.is_complete() && extensions_support;
+    return queue_indices.is_complete() && extensions_support;
   }
 
   bool check_device_extension_support(VkPhysicalDevice device) {
@@ -763,17 +791,17 @@ private:
       vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface,
                                            &present_support);
       if (present_support) {
-        indices.present_family = i;
+        queue_indices.present_family = i;
       }
       if (queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-        indices.graphics_family = i;
+        queue_indices.graphics_family = i;
       }
-      if (indices.is_complete()) {
+      if (queue_indices.is_complete()) {
         break;
       }
       i++;
     }
-    return indices;
+    return queue_indices;
   }
 
   SwapChainSupportDetails query_swap_chain_support(VkPhysicalDevice device) {
@@ -897,6 +925,8 @@ private:
     cleanup_swapchain();
     vkDestroyBuffer(device, vertex_buffer, nullptr);
     vkFreeMemory(device, vertex_buffer_memory, nullptr);
+    vkDestroyBuffer(device, index_buffer, nullptr);
+    vkFreeMemory(device, index_buffer_memory, nullptr);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       vkDestroySemaphore(device, image_available_semaphores[i], nullptr);
       vkDestroySemaphore(device, render_finished_semaphores[i], nullptr);
@@ -914,7 +944,7 @@ private:
   }
 
   GLFWwindow *window;
-  QueueFamilyIndices indices;
+  QueueFamilyIndices queue_indices;
   VkInstance instance;
   VkSurfaceKHR surface;
   VkSwapchainKHR swap_chain;
@@ -938,6 +968,8 @@ private:
   bool frame_buffer_resized;
   VkBuffer vertex_buffer;
   VkDeviceMemory vertex_buffer_memory;
+  VkBuffer index_buffer;
+  VkDeviceMemory index_buffer_memory;
 };
 
 int main() {
