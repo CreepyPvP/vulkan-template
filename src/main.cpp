@@ -1,14 +1,21 @@
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <glm/fwd.hpp>
 #include <limits>
 #include <math.h>
 #include <optional>
+#include <ostream>
 #include <set>
 #include <vector>
+
 #include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
 
 #include <util/shader_util.hpp>
 
@@ -47,6 +54,38 @@ struct SwapChainSupportDetails {
   std::vector<VkPresentModeKHR> present_modes;
 };
 
+struct Vertex {
+  glm::vec2 pos;
+  glm::vec3 color;
+
+  static VkVertexInputBindingDescription binding_description() {
+    VkVertexInputBindingDescription binding_description{};
+    binding_description.binding = 0;
+    binding_description.stride = sizeof(Vertex);
+    binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    return binding_description;
+  }
+
+  static std::array<VkVertexInputAttributeDescription, 2> get_attribute_description() {
+    std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions{};
+    attribute_descriptions[0].binding = 0;
+    attribute_descriptions[0].location = 0;
+    attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attribute_descriptions[0].offset = offsetof(Vertex, pos);
+    attribute_descriptions[1].binding = 0;
+    attribute_descriptions[1].location = 1;
+    attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attribute_descriptions[1].offset = offsetof(Vertex, color);
+    return attribute_descriptions;
+  }
+};
+
+const std::vector<Vertex> vertice = {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
 class HelloTriangleApplication {
 public:
   void run() {
@@ -66,8 +105,10 @@ private:
     glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
   }
 
-  static void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
-    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+  static void framebuffer_resize_callback(GLFWwindow *window, int width,
+                                          int height) {
+    auto app = reinterpret_cast<HelloTriangleApplication *>(
+        glfwGetWindowUserPointer(window));
     app->frame_buffer_resized = true;
   }
 
@@ -82,6 +123,7 @@ private:
     create_graphics_pipeline();
     create_framebuffers();
     create_command_pool();
+    create_vertex_buffer();
     create_command_buffers();
     create_sync_objects();
   }
@@ -158,7 +200,8 @@ private:
     for (uint32_t queue_family : unique_queue_families) {
       VkDeviceQueueCreateInfo queue_create_info{};
       queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-      queue_create_info.queueFamilyIndex = queue_family; // indices.graphics_family.value();
+      queue_create_info.queueFamilyIndex =
+          queue_family; // indices.graphics_family.value();
       queue_create_info.queueCount = 1;
       queue_create_info.pQueuePriorities = &queue_proiority;
       queue_create_infos.push_back(queue_create_info);
@@ -306,13 +349,15 @@ private:
     dynamic_state.dynamicStateCount =
         static_cast<uint32_t>(dynamic_states.size());
     dynamic_state.pDynamicStates = dynamic_states.data();
+    auto binding_description = Vertex::binding_description();
+    auto attribute_description = Vertex::get_attribute_description();
     VkPipelineVertexInputStateCreateInfo vertex_input_info{};
     vertex_input_info.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 0;
-    vertex_input_info.pVertexBindingDescriptions = nullptr;
-    vertex_input_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_info.pVertexAttributeDescriptions = nullptr;
+    vertex_input_info.vertexBindingDescriptionCount = 1;
+    vertex_input_info.pVertexBindingDescriptions = &binding_description;
+    vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(attribute_description.size());
+    vertex_input_info.pVertexAttributeDescriptions = attribute_description.data();
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType =
         VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -470,9 +515,14 @@ private:
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     pool_info.queueFamilyIndex = indices.graphics_family.value();
-    if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) != VK_SUCCESS) {
+    if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) !=
+        VK_SUCCESS) {
       throw std::runtime_error("failed to create command pool");
     }
+  }
+
+  void create_vertex_buffer() {
+    // VkBufferCreateInfo
   }
 
   void create_command_buffers() {
@@ -481,8 +531,9 @@ private:
     alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     alloc_info.commandPool = command_pool;
     alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc_info.commandBufferCount = (uint32_t) command_buffers.size();
-    if(vkAllocateCommandBuffers(device, &alloc_info, command_buffers.data()) != VK_SUCCESS) {
+    alloc_info.commandBufferCount = (uint32_t)command_buffers.size();
+    if (vkAllocateCommandBuffers(device, &alloc_info, command_buffers.data()) !=
+        VK_SUCCESS) {
       throw std::runtime_error("failed to allocate command buffers");
     }
   }
@@ -497,9 +548,12 @@ private:
     fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      if (vkCreateSemaphore(device, &semaphore_info, nullptr, &image_available_semaphores[i]) ||
-          vkCreateSemaphore(device, &semaphore_info, nullptr, &render_finished_semaphores[i]) ||
-          vkCreateFence(device, &fence_info, nullptr, &in_flight_fences[i]) != VK_SUCCESS) {
+      if (vkCreateSemaphore(device, &semaphore_info, nullptr,
+                            &image_available_semaphores[i]) ||
+          vkCreateSemaphore(device, &semaphore_info, nullptr,
+                            &render_finished_semaphores[i]) ||
+          vkCreateFence(device, &fence_info, nullptr, &in_flight_fences[i]) !=
+              VK_SUCCESS) {
         throw std::runtime_error("failed to create semaphore");
       }
     }
@@ -523,10 +577,11 @@ private:
     render_pass_info.clearValueCount = 1;
     render_pass_info.pClearValues = &clear_color;
     vkCmdBeginRenderPass(buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+    vkCmdBindPipeline(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      graphics_pipeline);
     vkCmdDraw(buffer, 3, 1, 0, 0);
     vkCmdEndRenderPass(buffer);
-    if(vkEndCommandBuffer(buffer) != VK_SUCCESS) {
+    if (vkEndCommandBuffer(buffer) != VK_SUCCESS) {
       throw std::runtime_error("failed to record command buffer");
     }
   }
@@ -686,9 +741,13 @@ private:
   }
 
   void draw_frame(uint32_t current_frame) {
-    vkWaitForFences(device, 1, &in_flight_fences[current_frame], VK_TRUE, UINT64_MAX);
+    vkWaitForFences(device, 1, &in_flight_fences[current_frame], VK_TRUE,
+                    UINT64_MAX);
     uint32_t image_index;
-    VkResult result = vkAcquireNextImageKHR(device, swap_chain, UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+    VkResult result =
+        vkAcquireNextImageKHR(device, swap_chain, UINT64_MAX,
+                              image_available_semaphores[current_frame],
+                              VK_NULL_HANDLE, &image_index);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
       recreate_swap_chain();
       return;
@@ -701,16 +760,19 @@ private:
     VkSubmitInfo submit_info{};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     VkSemaphore wait_semaphores[] = {image_available_semaphores[current_frame]};
-    VkPipelineStageFlags wait_stages[] =  {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    VkPipelineStageFlags wait_stages[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submit_info.waitSemaphoreCount = 1;
     submit_info.pWaitSemaphores = wait_semaphores;
     submit_info.pWaitDstStageMask = wait_stages;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffers[current_frame];
-    VkSemaphore signal_semaphores[] = {render_finished_semaphores[current_frame]};
+    VkSemaphore signal_semaphores[] = {
+        render_finished_semaphores[current_frame]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
-    if (vkQueueSubmit(graphics_queue, 1, &submit_info, in_flight_fences[current_frame]) != VK_SUCCESS) {
+    if (vkQueueSubmit(graphics_queue, 1, &submit_info,
+                      in_flight_fences[current_frame]) != VK_SUCCESS) {
       throw std::runtime_error("failed to submit draw command buffer");
     }
     VkPresentInfoKHR present_info{};
@@ -723,7 +785,8 @@ private:
     present_info.pImageIndices = &image_index;
     present_info.pResults = nullptr;
     result = vkQueuePresentKHR(present_queue, &present_info);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || frame_buffer_resized) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+        frame_buffer_resized) {
       frame_buffer_resized = false;
       recreate_swap_chain();
     } else if (result != VK_SUCCESS) {
@@ -732,7 +795,7 @@ private:
   }
 
   void cleanup_swapchain() {
-    for (auto framebuffer: swap_chain_framebuffers) {
+    for (auto framebuffer : swap_chain_framebuffers) {
       vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
     for (auto image_view : swap_chain_image_views) {
@@ -740,7 +803,7 @@ private:
     }
     vkDestroySwapchainKHR(device, swap_chain, nullptr);
   }
-  
+
   void cleanup() {
     cleanup_swapchain();
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
