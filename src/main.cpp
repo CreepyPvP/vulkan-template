@@ -62,6 +62,13 @@ private:
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebuffer_resize_callback);
+  }
+
+  static void framebuffer_resize_callback(GLFWwindow* window, int width, int height) {
+    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->frame_buffer_resized = true;
   }
 
   void init_vulkan() {
@@ -229,6 +236,20 @@ private:
                             swap_chain_images.data());
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
+  }
+
+  void recreate_swap_chain() {
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(window, &width, &height);
+      glfwWaitEvents();
+    }
+    vkDeviceWaitIdle(device);
+    cleanup_swapchain();
+    create_swap_chain();
+    create_image_views();
+    create_framebuffers();
   }
 
   void create_image_views() {
@@ -666,9 +687,15 @@ private:
 
   void draw_frame(uint32_t current_frame) {
     vkWaitForFences(device, 1, &in_flight_fences[current_frame], VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1, &in_flight_fences[current_frame]);
     uint32_t image_index;
-    vkAcquireNextImageKHR(device, swap_chain, UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+    VkResult result = vkAcquireNextImageKHR(device, swap_chain, UINT64_MAX, image_available_semaphores[current_frame], VK_NULL_HANDLE, &image_index);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+      recreate_swap_chain();
+      return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      throw std::runtime_error("failed to acquire swap chain image");
+    }
+    vkResetFences(device, 1, &in_flight_fences[current_frame]);
     vkResetCommandBuffer(command_buffers[current_frame], 0);
     record_command_buffer(command_buffers[current_frame], image_index);
     VkSubmitInfo submit_info{};
@@ -695,26 +722,36 @@ private:
     present_info.pSwapchains = swap_chains;
     present_info.pImageIndices = &image_index;
     present_info.pResults = nullptr;
-    vkQueuePresentKHR(present_queue, &present_info);
+    result = vkQueuePresentKHR(present_queue, &present_info);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || frame_buffer_resized) {
+      frame_buffer_resized = false;
+      recreate_swap_chain();
+    } else if (result != VK_SUCCESS) {
+      throw std::runtime_error("failed to present swap chain image");
+    }
   }
 
+  void cleanup_swapchain() {
+    for (auto framebuffer: swap_chain_framebuffers) {
+      vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+    for (auto image_view : swap_chain_image_views) {
+      vkDestroyImageView(device, image_view, nullptr);
+    }
+    vkDestroySwapchainKHR(device, swap_chain, nullptr);
+  }
+  
   void cleanup() {
+    cleanup_swapchain();
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       vkDestroySemaphore(device, image_available_semaphores[i], nullptr);
       vkDestroySemaphore(device, render_finished_semaphores[i], nullptr);
       vkDestroyFence(device, in_flight_fences[i], nullptr);
     }
     vkDestroyCommandPool(device, command_pool, nullptr);
-    for (auto framebuffer: swap_chain_framebuffers) {
-      vkDestroyFramebuffer(device, framebuffer, nullptr);
-    }
     vkDestroyPipeline(device, graphics_pipeline, nullptr);
     vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
     vkDestroyRenderPass(device, render_pass, nullptr);
-    for (auto image_view : swap_chain_image_views) {
-      vkDestroyImageView(device, image_view, nullptr);
-    }
-    vkDestroySwapchainKHR(device, swap_chain, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
@@ -744,6 +781,7 @@ private:
   std::vector<VkSemaphore> image_available_semaphores;
   std::vector<VkSemaphore> render_finished_semaphores;
   std::vector<VkFence> in_flight_fences;
+  bool frame_buffer_resized;
 };
 
 int main() {
